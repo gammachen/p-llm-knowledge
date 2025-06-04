@@ -244,23 +244,55 @@ for epoch in range(5):
     print(f"Epoch {epoch+1} | Loss: {total_loss/len(train_loader):.4f}")
 
 def custom_collate_fn(batch):
-    # 提取 input_ids 和 attention_mask 并进行填充
+    # 调试输出：打印每个样本的 input_ids 和 attention_mask 形状
+    print("Batch input_ids shapes:", [item['input_ids'].shape for item in batch])
+    print("Batch attention_mask shapes:", [item['attention_mask'].shape for item in batch])
+    
+    # 提取 input_ids 并进行填充
     input_ids = torch.nn.utils.rnn.pad_sequence(
-        [item['input_ids'].squeeze(0) for item in batch],
+        [item['input_ids'] for item in batch],
         batch_first=True,
         padding_value=tokenizer.pad_token_id
     )
+    
+    # 提取 attention_mask 并进行填充
     attention_mask = torch.nn.utils.rnn.pad_sequence(
-        [item['attention_mask'].squeeze(0) for item in batch],
+        [item['attention_mask'] for item in batch],
         batch_first=True,
         padding_value=0
     )
+    
+    # 提取 labels
     labels = torch.tensor([item['labels'] for item in batch])
+    
+    # 调试输出：填充后的张量形状
+    print("Padded input_ids shape:", input_ids.shape)
+    print("Padded attention_mask shape:", attention_mask.shape)
+    
     return {
         'input_ids': input_ids,
         'attention_mask': attention_mask,
         'labels': labels
     }
+
+# 确保 Dataset 返回的每个样本结构正确
+class YourDatasetClass(torch.utils.data.Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        tokenized = tokenize_with_entities(sample["processed_text"])
+        
+        # 确保 input_ids 和 attention_mask 的形状为 (seq_length,)
+        return {
+            'input_ids': tokenized["input_ids"].squeeze(0),  # 去掉 batch 维度
+            'attention_mask': tokenized["attention_mask"].squeeze(0),  # 去掉 batch 维度
+            'labels': sample["label"]
+        }
 
 def predict_relation(text, ent1, ent2):
     processed = preprocess(text, ent1, ent2)

@@ -244,7 +244,7 @@ for epoch in range(5):
     print(f"Epoch {epoch+1} | Loss: {total_loss/len(train_loader):.4f}")
 
 def custom_collate_fn(batch):
-    # 动态填充输入以保证批次内所有张量具有相同长度
+    # 提取 input_ids 和 attention_mask 并进行填充
     input_ids = torch.nn.utils.rnn.pad_sequence(
         [item['input_ids'].squeeze(0) for item in batch],
         batch_first=True,
@@ -253,7 +253,7 @@ def custom_collate_fn(batch):
     attention_mask = torch.nn.utils.rnn.pad_sequence(
         [item['attention_mask'].squeeze(0) for item in batch],
         batch_first=True,
-        padding_value=0  # pad_token 对应的 attention mask 应该是 0
+        padding_value=0
     )
     labels = torch.tensor([item['labels'] for item in batch])
     return {

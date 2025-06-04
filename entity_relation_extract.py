@@ -146,9 +146,24 @@ tokenizer.add_special_tokens(special_tokens)
 assert tokenizer.convert_tokens_to_ids("[E1]") != 100, "[E1] token 被错误映射为 100"
 
 def tokenize_with_entities(text):
-    # 分词时保留特殊标记
-    encoding = tokenizer(text, return_tensors="pt", padding=True, truncation=True, add_special_tokens=True)
-    return encoding
+    # 分词并找到 [E1] 和 [E2] 的位置
+    encoding = tokenizer(text, return_tensors="pt", padding=False, truncation=True)
+    input_ids = encoding["input_ids"].squeeze(0)
+    
+    # 获取 [E1] 和 [E2] 的 token ID
+    e1_id = tokenizer.convert_tokens_to_ids("[E1]")
+    e2_id = tokenizer.convert_tokens_to_ids("[E2]")
+    
+    # 找到实体起始位置
+    e1_start = (input_ids == e1_id).nonzero(as_tuple=True)[0].item() if e1_id in input_ids else -1
+    e2_start = (input_ids == e2_id).nonzero(as_tuple=True)[0].item() if e2_id in input_ids else -1
+    
+    return {
+        'input_ids': input_ids,
+        'attention_mask': encoding["attention_mask"].squeeze(0),
+        'e1_start': e1_start,
+        'e2_start': e2_start
+    }
     
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -164,11 +179,49 @@ class REDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.data.iloc[idx]
         tokenized = tokenize_with_entities(sample["processed_text"])
-        label = self.label_map.get(sample["relation"], -1)
+        
+        # 确保 input_ids 和 attention_mask 是一维张量
+        assert tokenized["input_ids"].dim() == 1, f"input_ids 应为一维，实际形状: {tokenized['input_ids'].shape}"
+        assert tokenized["attention_mask"].dim() == 1, f"attention_mask 应为一维，实际形状: {tokenized['attention_mask'].shape}"
+        
         return {
-            **tokenized,
-            "labels": torch.tensor(label)
+            'input_ids': tokenized["input_ids"],
+            'attention_mask': tokenized["attention_mask"],
+            'labels': torch.tensor(self.label_map.get(sample["relation"], -1))
         }
+
+
+def custom_collate_fn(batch):
+    # 调试输出：打印每个样本的 input_ids 和 attention_mask 形状
+    print("Batch input_ids shapes:", [item['input_ids'].shape for item in batch])
+    print("Batch attention_mask shapes:", [item['attention_mask'].shape for item in batch])
+    
+    # 提取 input_ids 并进行填充
+    input_ids = torch.nn.utils.rnn.pad_sequence(
+        [item['input_ids'] for item in batch],
+        batch_first=True,
+        padding_value=tokenizer.pad_token_id
+    )
+    
+    # 提取 attention_mask 并进行填充
+    attention_mask = torch.nn.utils.rnn.pad_sequence(
+        [item['attention_mask'] for item in batch],
+        batch_first=True,
+        padding_value=0
+    )
+    
+    # 提取 labels
+    labels = torch.tensor([item['labels'] for item in batch])
+    
+    # 调试输出：填充后的张量形状
+    print("Padded input_ids shape:", input_ids.shape)
+    print("Padded attention_mask shape:", attention_mask.shape)
+    
+    return {
+        'input_ids': input_ids,
+        'attention_mask': attention_mask,
+        'labels': labels
+    }
 
 # 创建标签映射
 relations = df["relation"].unique()
@@ -176,7 +229,12 @@ label_map = {rel: idx for idx, rel in enumerate(relations)}
 
 # 创建DataLoader
 train_dataset = REDataset(train_df, label_map)
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+train_loader = DataLoader(
+    dataset=train_dataset,
+    batch_size=8,
+    shuffle=True,
+    collate_fn=custom_collate_fn  # ✅ 显式传入自定义 collate 函数
+)
 
 from transformers import BertModel
 import torch.nn as nn
@@ -243,37 +301,6 @@ for epoch in range(5):
     
     print(f"Epoch {epoch+1} | Loss: {total_loss/len(train_loader):.4f}")
 
-def custom_collate_fn(batch):
-    # 调试输出：打印每个样本的 input_ids 和 attention_mask 形状
-    print("Batch input_ids shapes:", [item['input_ids'].shape for item in batch])
-    print("Batch attention_mask shapes:", [item['attention_mask'].shape for item in batch])
-    
-    # 提取 input_ids 并进行填充
-    input_ids = torch.nn.utils.rnn.pad_sequence(
-        [item['input_ids'] for item in batch],
-        batch_first=True,
-        padding_value=tokenizer.pad_token_id
-    )
-    
-    # 提取 attention_mask 并进行填充
-    attention_mask = torch.nn.utils.rnn.pad_sequence(
-        [item['attention_mask'] for item in batch],
-        batch_first=True,
-        padding_value=0
-    )
-    
-    # 提取 labels
-    labels = torch.tensor([item['labels'] for item in batch])
-    
-    # 调试输出：填充后的张量形状
-    print("Padded input_ids shape:", input_ids.shape)
-    print("Padded attention_mask shape:", attention_mask.shape)
-    
-    return {
-        'input_ids': input_ids,
-        'attention_mask': attention_mask,
-        'labels': labels
-    }
 
 # 确保 Dataset 返回的每个样本结构正确
 class YourDatasetClass(torch.utils.data.Dataset):
@@ -287,11 +314,16 @@ class YourDatasetClass(torch.utils.data.Dataset):
         sample = self.samples[idx]
         tokenized = tokenize_with_entities(sample["processed_text"])
         
-        # 确保 input_ids 和 attention_mask 的形状为 (seq_length,)
+        # 确保 input_ids 和 attention_mask 是一维张量
+        assert tokenized["input_ids"].dim() == 1, f"input_ids 应为一维，实际形状: {tokenized['input_ids'].shape}"
+        assert tokenized["attention_mask"].dim() == 1, f"attention_mask 应为一维，实际形状: {tokenized['attention_mask'].shape}"
+        
         return {
-            'input_ids': tokenized["input_ids"].squeeze(0),  # 去掉 batch 维度
-            'attention_mask': tokenized["attention_mask"].squeeze(0),  # 去掉 batch 维度
-            'labels': sample["label"]
+            'input_ids': tokenized["input_ids"],
+            'attention_mask': tokenized["attention_mask"],
+            'labels': sample["label"],
+            'e1_start': tokenized["e1_start"],
+            'e2_start': tokenized["e2_start"]
         }
 
 def predict_relation(text, ent1, ent2):

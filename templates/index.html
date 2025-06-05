@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>中文文本关系提取预训练模型</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        .message {
+            margin: 10px 0;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .user-message {
+            align-self: flex-end;
+            background: #d1e7dd;
+            border-radius: 8px 4px 4px 4px;
+            padding: 8px 12px;
+            max-width: 70%;
+            align-items: flex-end;
+        }
+        
+        .bot-message {
+            align-self: flex-start;
+            background: #e9ecef;
+            border-radius: 4px 8px 4px 4px;
+            padding: 8px 12px;
+            max-width: 70%;
+        }
+        
+        .input-container {
+            display: flex;
+            margin-top: 10px;
+        }
+        
+        #messageInput {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+        }
+        
+        #sendButton {
+            padding: 10px 20px;
+            font-size: 16px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        
+        #sendButton:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div id="messages" class="messages"></div>
+        
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="输入中文文本..." onkeypress="handleKeyPress(event)">
+            <button id="sendButton">发送</button>
+        </div>
+    </div>
+
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function createMessageElement(content, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            
+            if (isUser) {
+                messageDiv.textContent = content;
+            } else {
+                // 创建逐字显示的span元素
+                const span = document.createElement('span');
+                messageDiv.appendChild(span);
+                
+                // 逐字显示效果
+                let index = 0;
+                const timer = setInterval(() => {
+                    if (index < content.length) {
+                        span.textContent += content[index++];
+                    } else {
+                        clearInterval(timer);
+                    }
+                }, 50);
+            }
+            
+            return messageDiv;
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            // 添加用户消息
+            const userMessage = createMessageElement(text, true);
+            messagesDiv.appendChild(userMessage);
+            input.value = '';
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // 解析输入内容（支持中英文逗号或竖线分隔）
+            const parts = text.split(/[,，|]/).map(s => s.trim());
+            if (parts.length !== 3) {
+                const errorMessage = createMessageElement('请输入格式为：文本,实体1,实体2 的内容', false);
+                messagesDiv.appendChild(errorMessage);
+                return;
+            }
+
+            // 构造请求数据
+            const [textContent, ent1, ent2] = parts;
+            
+            // 获取机器人回复
+            const response = await fetch('/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    text: textContent,
+                    ent1: ent1,
+                    ent2: ent2
+                })
+            });
+            
+            const data = await response.json();
+            
+            // 显示预测结果
+            let resultText = '';
+            if (data.relation) {
+                resultText = `识别结果：\n关系：${data.relation}\n置信度：${data.confidence.toFixed(2)} ${data.entity1} ${data.relation} ${data.entity2} `;
+            } else {
+                resultText = '预测失败';
+            }
+
+            // 添加机器人消息
+            const botMessage = createMessageElement(resultText, false);
+            messagesDiv.appendChild(botMessage);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+    </script>
+</body>
+</html>

@@ -1,24 +1,4 @@
-import re
-import pandas as pd
-from sklearn.model_selection import train_test_split
-
-import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import BertTokenizer, BertModel, BertForSequenceClassification
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from transformers import BertModel
-import torch.nn as nn
-
-
-def preprocess(text, ent1, ent2):
-    """插入实体位置标记"""
-    text = text.replace(ent1, f"[E1]{ent1}[/E1]", 1)
-    text = text.replace(ent2, f"[E2]{ent2}[/E2]", 1)
-    return text
-
-# 示例数据加载 (需替换为真实数据)
-data = relation_data = [
-    # 公司关系 (10条)
+[
     {"text": "Apple was founded by Steve Jobs in Cupertino", "ent1": "Apple", "ent2": "Steve Jobs", "relation": "founded_by"},
     {"text": "Microsoft is headquartered in Redmond, Washington", "ent1": "Microsoft", "ent2": "Redmond", "relation": "headquartered_in"},
     {"text": "Elon Musk serves as the CEO of Tesla", "ent1": "Elon Musk", "ent2": "Tesla", "relation": "ceo_of"},
@@ -29,8 +9,6 @@ data = relation_data = [
     {"text": "Samsung is based in Seoul, South Korea", "ent1": "Samsung", "ent2": "Seoul", "relation": "located_in"},
     {"text": "Tim Cook succeeded Steve Jobs at Apple", "ent1": "Tim Cook", "ent2": "Steve Jobs", "relation": "succeeded"},
     {"text": "Intel supplies processors to Dell", "ent1": "Intel", "ent2": "Dell", "relation": "supplier_of"},
-    
-    # 地理关系 (15条)
     {"text": "Paris is the capital city of France", "ent1": "Paris", "ent2": "France", "relation": "capital_of"},
     {"text": "The Nile River flows through Egypt", "ent1": "Nile River", "ent2": "Egypt", "relation": "flows_through"},
     {"text": "Mount Everest is located in the Himalayas", "ent1": "Mount Everest", "ent2": "Himalayas", "relation": "part_of"},
@@ -46,8 +24,6 @@ data = relation_data = [
     {"text": "Mount Fuji is the highest mountain in Japan", "ent1": "Mount Fuji", "ent2": "Japan", "relation": "located_in"},
     {"text": "The Danube River empties into the Black Sea", "ent1": "Danube River", "ent2": "Black Sea", "relation": "flows_into"},
     {"text": "The Eiffel Tower stands in Paris", "ent1": "Eiffel Tower", "ent2": "Paris", "relation": "located_in"},
-    
-    # 人物关系 (20条)
     {"text": "Albert Einstein developed the theory of relativity", "ent1": "Albert Einstein", "ent2": "theory of relativity", "relation": "developed"},
     {"text": "Marie Curie won the Nobel Prize in Physics", "ent1": "Marie Curie", "ent2": "Nobel Prize", "relation": "awarded"},
     {"text": "William Shakespeare wrote Hamlet", "ent1": "William Shakespeare", "ent2": "Hamlet", "relation": "author_of"},
@@ -68,8 +44,6 @@ data = relation_data = [
     {"text": "Winston Churchill was the Prime Minister of the UK", "ent1": "Winston Churchill", "ent2": "UK", "relation": "leader_of"},
     {"text": "Cleopatra ruled ancient Egypt", "ent1": "Cleopatra", "ent2": "ancient Egypt", "relation": "ruled"},
     {"text": "Neil Armstrong walked on the Moon", "ent1": "Neil Armstrong", "ent2": "Moon", "relation": "walked_on"},
-    
-    # 科技与科学 (15条)
     {"text": "DNA contains genetic information", "ent1": "DNA", "ent2": "genetic information", "relation": "contains"},
     {"text": "Photosynthesis occurs in plant chloroplasts", "ent1": "Photosynthesis", "ent2": "chloroplasts", "relation": "occurs_in"},
     {"text": "The Internet relies on TCP/IP protocols", "ent1": "Internet", "ent2": "TCP/IP", "relation": "depends_on"},
@@ -85,8 +59,6 @@ data = relation_data = [
     {"text": "Black holes have event horizons", "ent1": "Black holes", "ent2": "event horizons", "relation": "has"},
     {"text": "Autonomous vehicles use lidar sensors", "ent1": "Autonomous vehicles", "ent2": "lidar sensors", "relation": "uses"},
     {"text": "mRNA technology enabled COVID-19 vaccines", "ent1": "mRNA technology", "ent2": "COVID-19 vaccines", "relation": "enabled"},
-    
-    # 历史事件 (10条)
     {"text": "World War II ended in 1945", "ent1": "World War II", "ent2": "1945", "relation": "ended_in"},
     {"text": "The Industrial Revolution began in Britain", "ent1": "Industrial Revolution", "ent2": "Britain", "relation": "began_in"},
     {"text": "The Renaissance originated in Italy", "ent1": "Renaissance", "ent2": "Italy", "relation": "originated_in"},
@@ -97,8 +69,6 @@ data = relation_data = [
     {"text": "The Magna Carta limited the king's power", "ent1": "Magna Carta", "ent2": "king", "relation": "limited"},
     {"text": "The Cold War involved the US and USSR", "ent1": "Cold War", "ent2": "US", "relation": "involved"},
     {"text": "The Declaration of Independence was signed in 1776", "ent1": "Declaration of Independence", "ent2": "1776", "relation": "signed_in"},
-    
-    # 文化艺术 (15条)
     {"text": "The Louvre Museum houses the Mona Lisa", "ent1": "Louvre Museum", "ent2": "Mona Lisa", "relation": "houses"},
     {"text": "J.K. Rowling authored the Harry Potter series", "ent1": "J.K. Rowling", "ent2": "Harry Potter", "relation": "author_of"},
     {"text": "The Beatles originated from Liverpool", "ent1": "The Beatles", "ent2": "Liverpool", "relation": "originated_from"},
@@ -114,8 +84,6 @@ data = relation_data = [
     {"text": "The Harry Potter series involves magic", "ent1": "Harry Potter", "ent2": "magic", "relation": "involves"},
     {"text": "The Sydney Opera House hosts performances", "ent1": "Sydney Opera House", "ent2": "performances", "relation": "hosts"},
     {"text": "Impressionism was pioneered by Claude Monet", "ent1": "Impressionism", "ent2": "Claude Monet", "relation": "pioneered_by"},
-    
-    # 医学健康 (15条)
     {"text": "Insulin regulates blood sugar levels", "ent1": "Insulin", "ent2": "blood sugar", "relation": "regulates"},
     {"text": "COVID-19 is caused by SARS-CoV-2", "ent1": "COVID-19", "ent2": "SARS-CoV-2", "relation": "caused_by"},
     {"text": "Antibiotics treat bacterial infections", "ent1": "Antibiotics", "ent2": "bacterial infections", "relation": "treats"},
@@ -131,8 +99,6 @@ data = relation_data = [
     {"text": "Stem cells differentiate into specialized cells", "ent1": "Stem cells", "ent2": "specialized cells", "relation": "differentiate_into"},
     {"text": "The pancreas produces insulin", "ent1": "pancreas", "ent2": "insulin", "relation": "produces"},
     {"text": "Radiotherapy treats tumors", "ent1": "Radiotherapy", "ent2": "tumors", "relation": "treats"},
-    
-    # 人物关系 (20条)
     {"text": "马云是阿里巴巴集团的创始人", "ent1": "马云", "ent2": "阿里巴巴", "relation": "创始人"},
     {"text": "钟南山院士在抗击非典中做出了杰出贡献", "ent1": "钟南山", "ent2": "非典", "relation": "抗击"},
     {"text": "李白被誉为诗仙", "ent1": "李白", "ent2": "诗仙", "relation": "被誉为"},
@@ -153,8 +119,6 @@ data = relation_data = [
     {"text": "王羲之被尊为书圣", "ent1": "王羲之", "ent2": "书圣", "relation": "尊为"},
     {"text": "钱学森被誉为中国航天之父", "ent1": "钱学森", "ent2": "航天", "relation": "之父"},
     {"text": "林则徐领导了虎门销烟", "ent1": "林则徐", "ent2": "虎门销烟", "relation": "领导"},
-
-    # 地理关系 (20条)
     {"text": "北京是中国的首都", "ent1": "北京", "ent2": "中国", "relation": "首都"},
     {"text": "长江流经11个省市自治区", "ent1": "长江", "ent2": "省市自治区", "relation": "流经"},
     {"text": "台湾位于中国东南沿海", "ent1": "台湾", "ent2": "中国", "relation": "位于"},
@@ -175,8 +139,6 @@ data = relation_data = [
     {"text": "黄果树瀑布位于贵州省", "ent1": "黄果树瀑布", "ent2": "贵州", "relation": "位于"},
     {"text": "布达拉宫坐落在拉萨", "ent1": "布达拉宫", "ent2": "拉萨", "relation": "坐落"},
     {"text": "三沙市管辖西沙、中沙和南沙群岛", "ent1": "三沙市", "ent2": "西沙群岛", "relation": "管辖"},
-
-    # 科技与公司 (20条)
     {"text": "华为自主研发了鸿蒙操作系统", "ent1": "华为", "ent2": "鸿蒙", "relation": "研发"},
     {"text": "腾讯开发了微信应用程序", "ent1": "腾讯", "ent2": "微信", "relation": "开发"},
     {"text": "百度是中国最大的搜索引擎", "ent1": "百度", "ent2": "搜索引擎", "relation": "是"},
@@ -197,8 +159,6 @@ data = relation_data = [
     {"text": "小米推出了MIUI操作系统", "ent1": "小米", "ent2": "MIUI", "relation": "推出"},
     {"text": "中国移动提供5G通信服务", "ent1": "中国移动", "ent2": "5G", "relation": "提供"},
     {"text": "拼多多是中国新兴的电商平台", "ent1": "拼多多", "ent2": "电商平台", "relation": "是"},
-
-    # 文化历史 (20条)
     {"text": "《红楼梦》的作者是曹雪芹", "ent1": "红楼梦", "ent2": "曹雪芹", "relation": "作者"},
     {"text": "京剧是中国国粹", "ent1": "京剧", "ent2": "国粹", "relation": "是"},
     {"text": "秦始皇陵出土了兵马俑", "ent1": "秦始皇陵", "ent2": "兵马俑", "relation": "出土"},
@@ -219,8 +179,6 @@ data = relation_data = [
     {"text": "景德镇瓷器享誉全球", "ent1": "景德镇", "ent2": "瓷器", "relation": "生产"},
     {"text": "中国结象征吉祥如意", "ent1": "中国结", "ent2": "吉祥", "relation": "象征"},
     {"text": "皮影戏是中国民间传统艺术", "ent1": "皮影戏", "ent2": "传统艺术", "relation": "是"},
-
-    # 医学健康 (20条)
     {"text": "针灸是中医传统疗法", "ent1": "针灸", "ent2": "中医", "relation": "属于"},
     {"text": "青蒿素用于治疗疟疾", "ent1": "青蒿素", "ent2": "疟疾", "relation": "治疗"},
     {"text": "钟南山院士研究呼吸系统疾病", "ent1": "钟南山", "ent2": "呼吸系统", "relation": "研究"},
@@ -242,237 +200,3 @@ data = relation_data = [
     {"text": "核酸检测是诊断新冠病毒的主要方法", "ent1": "核酸检测", "ent2": "新冠病毒", "relation": "诊断"},
     {"text": "健康中国2030规划纲要提出全民健康目标", "ent1": "健康中国2030", "ent2": "全民健康", "relation": "提出"}
 ]
-
-df = pd.DataFrame(data)
-df["processed_text"] = df.apply(lambda x: preprocess(
-    x["text"], x["ent1"], x["ent2"]), axis=1)
-
-# 划分数据集
-train_df, test_df = train_test_split(df, test_size=0.2)
-
-
-# 确保 Dataset 返回的每个样本结构正确
-class REDataset(Dataset):
-    def __init__(self, dataframe, label_map):
-        self.data = dataframe
-        self.label_map = label_map
-        
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        sample = self.data.iloc[idx]
-        tokenized = tokenize_with_entities(sample["processed_text"])
-        label = self.label_map.get(sample["relation"], -1)
-        
-        # Make sure all required fields are included in the return dictionary
-        return {
-            "input_ids": tokenized["input_ids"].squeeze(0),
-            "attention_mask": tokenized["attention_mask"].squeeze(0),
-            "e1_start": tokenized["e1_start"],
-            "e1_end": tokenized["e1_end"],
-            "e2_start": tokenized["e2_start"],
-            "e2_end": tokenized["e2_end"],
-            "labels": torch.tensor(label)
-        }
-
-# 初始化 tokenizer
-from transformers import AutoTokenizer
-
-# 加载 tokenizer
-tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
-
-# 添加特殊标记
-special_tokens = {"additional_special_tokens": ["[E1]", "[E2]", "[/E1]", "[/E2]"]}
-tokenizer.add_special_tokens(special_tokens)
-
-# 确认 token 是否存在
-assert tokenizer.convert_tokens_to_ids("[E1]") != 100, "[E1] token 被错误映射为 100"
-
-def tokenize_with_entities(text):
-    # Tokenize the text and get input IDs
-    encoding = tokenizer(text, return_tensors="pt", padding=False, truncation=True)
-    input_ids = encoding["input_ids"].squeeze(0)
-    attention_mask = encoding["attention_mask"].squeeze(0)
-    
-    # Get special token IDs
-    e1_id = tokenizer.convert_tokens_to_ids("[E1]")
-    e2_id = tokenizer.convert_tokens_to_ids("[E2]")
-    e1_end_id = tokenizer.convert_tokens_to_ids("[/E1]")
-    e2_end_id = tokenizer.convert_tokens_to_ids("[/E2]")
-    
-    # Find positions of entity markers
-    e1_start = (input_ids == e1_id).nonzero(as_tuple=True)[0].item() if e1_id in input_ids else -1
-    e2_start = (input_ids == e2_id).nonzero(as_tuple=True)[0].item() if e2_id in input_ids else -1
-    e1_end = (input_ids == e1_end_id).nonzero(as_tuple=True)[0].item() if e1_end_id in input_ids else -1
-    e2_end = (input_ids == e2_end_id).nonzero(as_tuple=True)[0].item() if e2_end_id in input_ids else -1
-    
-    return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "e1_start": e1_start,
-        "e2_start": e2_start,
-        "e1_end": e1_end,
-        "e2_end": e2_end
-    }
-
-def custom_collate_fn(batch):
-    input_ids = torch.nn.utils.rnn.pad_sequence(
-        [item['input_ids'] for item in batch],
-        batch_first=True,
-        padding_value=tokenizer.pad_token_id
-    )
-    attention_mask = torch.nn.utils.rnn.pad_sequence(
-        [item['attention_mask'] for item in batch],
-        batch_first=True,
-        padding_value=0
-    )
-    labels = torch.tensor([item['labels'] for item in batch])
-    e1_start = torch.tensor([item['e1_start'] for item in batch])
-    e2_start = torch.tensor([item['e2_start'] for item in batch])
-    e1_end = torch.tensor([item['e1_end'] for item in batch])
-    e2_end = torch.tensor([item['e2_end'] for item in batch])
-
-    return {
-        'input_ids': input_ids,
-        'attention_mask': attention_mask,
-        'labels': labels,
-        'e1_start': e1_start,
-        'e2_start': e2_start,
-        'e1_end': e1_end,
-        'e2_end': e2_end
-    }
-
-# 创建标签映射
-relations = df["relation"].unique()
-label_map = {rel: idx for idx, rel in enumerate(relations)}
-
-# 创建数据集时显式传递 label_map
-train_dataset = REDataset(train_df, label_map)
-test_dataset = REDataset(test_df, label_map)
-
-# 创建DataLoader
-train_loader = DataLoader(
-    dataset=train_dataset,
-    batch_size=8,
-    shuffle=True,
-    collate_fn=custom_collate_fn  # ✅ 显式传入自定义 collate 函数
-)
-test_loader = DataLoader(
-    dataset=test_dataset,
-    batch_size=8,
-    shuffle=False,
-    collate_fn=custom_collate_fn
-)
-
-from transformers import BertModel
-import torch.nn as nn
-
-class BERTForRE(nn.Module):
-    def __init__(self, num_labels):
-        super().__init__()
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
-        self.bert.resize_token_embeddings(len(tokenizer))  # 适配新token
-        # Adjust classifier input dimension to match concatenated vectors
-        self.classifier = nn.Linear(self.bert.config.hidden_size * 3, num_labels)
-        
-    def forward(self, input_ids, attention_mask, e1_start, e1_end, e2_start, e2_end):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        sequence_output = outputs.last_hidden_state
-        
-        # 获取[CLS]标记表示
-        cls_output = sequence_output[:, 0, :]
-        
-        # 实体位置增强
-        e1_rep = sequence_output[torch.arange(sequence_output.size(0)), e1_start]
-        e2_rep = sequence_output[torch.arange(sequence_output.size(0)), e2_start]
-        
-        # Concatenate all representations
-        combined = torch.cat([cls_output, e1_rep, e2_rep], dim=1)
-        
-        logits = self.classifier(combined)
-        return logits
-
-model = BERTForRE(num_labels=len(label_map))
-
-from transformers.optimization import Adafactor
-import os
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
-
-optimizer = Adafactor(
-    model.parameters(), 
-    lr=1e-5, 
-    scale_parameter=False, 
-    relative_step=False)
-criterion = nn.CrossEntropyLoss()
-
-def save_model(model, save_dir="saved_models"):
-    """保存模型及其配置"""
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    model.save_pretrained(save_dir)
-    print(f"Model saved to {save_dir}")
-
-# 训练循环
-for epoch in range(5):
-    model.train()
-    total_loss = 0
-    
-    for batch in train_loader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        
-        optimizer.zero_grad()
-        outputs = model(
-            input_ids=batch["input_ids"],
-            attention_mask=batch["attention_mask"],
-            e1_start=batch["e1_start"],
-            e1_end=batch["e1_end"],
-            e2_start=batch["e2_start"],
-            e2_end=batch["e2_end"]
-        )
-        
-        loss = criterion(outputs, batch["labels"])
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-    
-    print(f"Epoch {epoch+1} | Loss: {total_loss/len(train_loader):.4f}")
-
-# 保存模型
-save_model(model)
-def predict_relation(text, ent1, ent2):
-    processed = preprocess(text, ent1, ent2)
-    inputs = tokenize_with_entities(processed)
-    
-    # Convert integer values to tensors before unsqueezing
-    tensor_inputs = {}
-    for k, v in inputs.items():
-        if isinstance(v, int):
-            tensor_inputs[k] = torch.tensor([v]).to(device)
-        else:
-            tensor_inputs[k] = v.unsqueeze(0).to(device)
-    
-    model.eval()
-    with torch.no_grad():
-        logits = model(**tensor_inputs)
-    
-    probs = torch.softmax(logits, dim=-1)
-    pred_idx = torch.argmax(probs).item()
-    
-    # 反转标签映射
-    idx_to_label = {v: k for k, v in label_map.items()}
-    return idx_to_label[pred_idx], probs[0][pred_idx].item()
-
-# 测试
-text = "Tim Cook is the CEO of Apple"
-ent1, ent2 = "Tim Cook", "Apple"
-relation, confidence = predict_relation(text, ent1, ent2)
-print(f"Relation: {relation} (Confidence: {confidence:.2f})")
-
-text = "云南白药具有止血化瘀特别的作用"
-ent1, ent2 = "云南白药", "止血化瘀"
-relation, confidence = predict_relation(text, ent1, ent2)
-print(f"Relation: {relation} (Confidence: {confidence:.2f})")
